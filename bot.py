@@ -1,7 +1,6 @@
 import os
-import asyncio
+import subprocess
 from groq import Groq
-import edge_tts
 import requests
 from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips
 
@@ -33,12 +32,23 @@ def limpar_roteiro_ia(texto_bruto):
             
     return " ".join(linhas_limpas)
 
-async def gerar_voz(texto, arquivo_saida="audio.mp3"):
-    """Transforma o texto limpo em voz digital de alta qualidade"""
-    voz_selecionada = "pt-BR-AntonioNeural"
-    communicate = edge_tts.Communicate(texto, voz_selecionada)
-    await communicate.save(arquivo_saida)
-    print(f"[Sucesso] Áudio gerado e salvo como: {arquivo_saida}")
+def gerar_voz_e_legenda(texto, audio_path="audio.mp3", sub_path="legenda.vtt"):
+    """Gera o arquivo de áudio e extrai a legenda perfeitamente sincronizada"""
+    print("[Iniciando] Solicitando narração e sincronismo de legenda ao Edge-TTS...")
+    cmd = [
+        "edge-tts",
+        "--voice", "pt-BR-AntonioNeural",
+        "--text", texto,
+        "--write-media", audio_path,
+        "--write-subtitles", sub_path
+    ]
+    try:
+        subprocess.run(cmd, check=True)
+        print(f"[Sucesso] Áudio e Legendas gerados com sucesso!")
+        return True
+    except Exception as e:
+        print(f"[Erro no Voice] Falha ao rodar o gerador de voz/legenda: {e}")
+        return False
 
 def gerar_roteiro(tema):
     """Gera um roteiro magnético focado em retenção usando o Llama 3"""
@@ -127,22 +137,20 @@ def baixar_videos_pexels_dinamico(queries):
             
     return arquivos_baixados
 
-def editar_video_final(videos, audio_path, output_path="video_final.mp4"):
-    """Une a colagem de mídias dinâmicas com o áudio final na nuvem"""
-    print("\n[Passo 4] Iniciando a montagem e renderização com o MoviePy...")
+def editar_video_base(videos, audio_path, output_path="video_cru.mp4"):
+    """Une as mídias dinâmicas com o áudio mas deixa sem legenda por enquanto"""
+    print("\n[Passo 4] Realizando a colagem de mídias com o MoviePy...")
     try:
         audio_clip = AudioFileClip(audio_path)
         duracao_audio = audio_clip.duration
-        print(f"Duração exata do áudio gerado: {duracao_audio:.2f} segundos.")
 
         clips_video = [VideoFileClip(v) for v in videos]
-        video_concatenado = concatenate_videoclips(clips_video, method="compose")
-        video_final = video_concatenado.set_audio(audio_clip)
+        video_concatenated = concatenate_videoclips(clips_video, method="compose")
+        video_final = video_concatenated.set_audio(audio_clip)
         
         if video_final.duration > duracao_audio:
             video_final = video_final.subclip(0, duracao_audio)
             
-        print("Renderizando mixagem audiovisual...")
         video_final.write_videofile(
             output_path,
             fps=24,
@@ -156,10 +164,32 @@ def editar_video_final(videos, audio_path, output_path="video_final.mp4"):
         for c in clips_video:
             c.close()
             
-        print(f"[Sucesso] Edição concluída: {output_path}")
+        print(f"[Sucesso] Vídeo base estruturado!")
         return True
     except Exception as e:
-        print(f"[Erro de Edição] Falha na montagem do MoviePy: {e}")
+        print(f"[Erro de Edição] Falha na montagem básica: {e}")
+        return False
+
+def aplicar_legendas_estilizadas(video_input, legenda_input, video_output="video_final.mp4"):
+    """Renderiza a legenda estilizada estilo TikTok (Amarela, com borda preta, no centro)"""
+    print("\n[Passo 5] Aplicando legendas dinâmicas estilo TikTok via FFmpeg de alta velocidade...")
+    
+    # Configuração de estilo ASS: Fonte DejaVu Sans, amarela (&H0000FFFF), borda preta grossa, centralizada no meio da tela (Alignment=5)
+    estilo_tiktok = "Fontname=DejaVu Sans,FontSize=24,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2.5,Alignment=5"
+    
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", video_input,
+        "-vf", f"subtitles={legenda_input}:force_style='{estilo_tiktok}'",
+        "-c:a", "copy",
+        video_output
+    ]
+    try:
+        subprocess.run(cmd, check=True)
+        print(f"[Sucesso] Legendas aplicadas! Vídeo mobile definitivo pronto: {video_output}")
+        return True
+    except Exception as e:
+        print(f"[Erro nas Legendas] Falha ao embutir texto no vídeo: {e}")
         return False
 
 def main():
@@ -172,15 +202,18 @@ def main():
         print(roteiro_limpo)
         print("--------------------------------\n")
         
-        print("[Passo 2] Gerando áudio da narração limpa...")
-        asyncio.run(gerar_voz(roteiro_limpo))
+        # Passo 2 modificado: Gera o áudio e a legenda juntos
+        gerar_voz_e_legenda(roteiro_limpo, "audio.mp3", "legenda.vtt")
         
         termos_visuais = gerar_termos_busca_visuais(roteiro_limpo)
         print(f"Conceitos visuais definidos pelo Bot: {termos_visuais}")
         
         videos_baixados = baixar_videos_pexels_dinamico(termos_visuais)
         if len(videos_baixados) >= 2:
-            editar_video_final(videos_baixados, "audio.mp3")
+            # Edita o vídeo limpo
+            editar_video_base(videos_baixados, "audio.mp3", "video_cru.mp4")
+            # Aplica a camada de texto por cima
+            aplicar_legendas_estilizadas("video_cru.mp4", "legenda.vtt", "video_final.mp4")
         else:
             print("[Erro] Mídias insuficientes para gerar a colagem de vídeo.")
         print("\n[Fim] Script executado.")
