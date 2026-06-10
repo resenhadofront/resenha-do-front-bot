@@ -1,0 +1,32 @@
+name: Executar Robo Resenha do Front
+
+on:
+  workflow_dispatch: # Isso ativa um botão para você rodar o robô manualmente quando quiser
+
+jobs:
+  construir-e-rodar:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. Copia os arquivos do seu repositório para o servidor da nuvem
+    - name: Baixando o código do repositório
+      uses: actions/checkout@v4
+
+    # 2. Prepara o ambiente Python gratuito na nuvem
+    - name: Configurando o Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    # 3. Lê o seu arquivo requirements.txt e instala as bibliotecas
+    - name: Instalando as bibliotecas do robô
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    # 4. Roda o script injetando as chaves que guardamos nos Secrets
+    - name: Executando o Script do Robô
+      env:
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      run: python bot.py
