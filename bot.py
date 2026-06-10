@@ -170,20 +170,18 @@ def gerar_termos_busca_visuais(roteiro):
         return ["underground rave crowd", "techno dj lighting", "electronic music festival", "dancing club portrait"]
 
 def baixar_videos_pexels_dinamico(queries):
-    """Baixa um clipe vertical aleatório do Pexels dentro dos resultados para evitar repetição"""
+    """Baixa clipes e já padroniza nativamente em 720x1280 vertical via FFmpeg para eliminar barras pretas"""
     print("\n[Passo 3] Iniciando coleta de mídia dinâmica e randômica...")
     headers = {"Authorization": pexels_key}
     arquivos_baixados = []
     
     for i, query in enumerate(queries):
         print(f"Buscando clipe {i+1}/4 para o conceito: '{query}'...")
-        # Solicitamos 15 resultados para fazer um sorteio aleatório entre eles
         url = f"https://api.pexels.com/v1/videos/search?query={query}&per_page=15&orientation=portrait"
         try:
             response = requests.get(url, headers=headers)
             data = response.json()
             if "videos" in data and len(data["videos"]) > 0:
-                # Sorteia um dos 15 vídeos retornados
                 video_selecionado = random.choice(data["videos"])
                 video_files = video_selecionado.get("video_files", [])
                 video_url = None
@@ -192,12 +190,26 @@ def baixar_videos_pexels_dinamico(queries):
                         video_url = f_file.get("link")
                         break
                 if video_url:
-                    nome_arquivo = f"video_{i}.mp4"
+                    nome_provisorio = f"raw_{i}.mp4"
+                    nome_final = f"video_{i}.mp4"
+                    
+                    # Faz o download do arquivo bruto
                     res = requests.get(video_url)
-                    with open(nome_arquivo, "wb") as f:
+                    with open(nome_provisorio, "wb") as f:
                         f.write(res.content)
-                    arquivos_baixados.append(nome_arquivo)
-                    print(f"-> Clipe aleatório '{nome_arquivo}' baixado com sucesso!")
+                    
+                    # PODER DO FFMPEG: Força proporção 720x1280 perfeita, centraliza e arranca som do Pexels
+                    cmd_formatar = [
+                        "ffmpeg", "-y", "-i", nome_provisorio,
+                        "-vf", "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280",
+                        "-an",
+                        nome_final
+                    ]
+                    subprocess.run(cmd_formatar, check=True)
+                    os.remove(nome_provisorio)
+                    
+                    arquivos_baixados.append(nome_final)
+                    print(f"-> Clipe vertical puro '{nome_final}' gerado com sucesso!")
             else:
                 print(f"-> Sem resultados para '{query}'. Pulando...")
         except Exception as e:
@@ -206,21 +218,15 @@ def baixar_videos_pexels_dinamico(queries):
     return arquivos_baixados
 
 def editar_video_base(videos, audio_path, output_path="video_cru.mp4"):
-    """Une as mídias forçando uma resolução estrita de 720x1280 (Sem faixas pretas)"""
-    print("\n[Passo 4] Realizando a colagem e redimensionamento nativo 9:16 com o MoviePy...")
+    """Une as mídias perfeitamente idênticas sem causar distorções de canvas"""
+    print("\n[Passo 4] Realizando a colagem nativa 9:16 com o MoviePy...")
     try:
         audio_clip = AudioFileClip(audio_path)
         duracao_audio = audio_clip.duration
-        clips_video_processados = []
-        
-        for v in videos:
-            clip = VideoFileClip(v)
-            clip_redimensionado = clip.resize(height=1280)
-            w, h = clip_redimensionado.size
-            clip_cortado = clip_redimensionado.crop(x1=(w - 720) // 2, y1=0, x2=(w + 720) // 2, y2=1280)
-            clips_video_processados.append(clip_cortado)
+        clips_video_processados = [VideoFileClip(v) for v in videos]
 
-        video_concatenado = concatenate_videoclips(clips_video_processados, method="compose")
+        # Como os vídeos já estão perfeitamente moldados, a colagem simples funciona lisa
+        video_concatenado = concatenate_videoclips(clips_video_processados)
         video_final = video_concatenado.set_audio(audio_clip)
         
         if video_final.duration > duracao_audio:
@@ -239,16 +245,17 @@ def editar_video_base(videos, audio_path, output_path="video_cru.mp4"):
         for c in clips_video_processados:
             c.close()
             
-        print("[Sucesso] Vídeo base estruturado em 720x1280!")
+        print("[Sucesso] Vídeo base estruturado!")
         return True
     except Exception as e:
         print(f"[Erro de Edição] Falha na montagem básica: {e}")
         return False
 
 def aplicar_legendas_estilizadas(video_input, legenda_input, video_output="video_final.mp4"):
-    """Renderiza a legenda centralizada em baixo com margens estritas de quebra de linha"""
+    """Renderiza a legenda compacta e centralizada perfeitamente dentro da tela do celular"""
     print("\n[Passo 5] Aplicando legendas dinâmicas corrigidas via FFmpeg...")
-    estilo_tiktok = "Fontname=DejaVu Sans,FontSize=20,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Alignment=2,MarginV=130,MarginL=50,MarginR=50"
+    # Fonte legível, tamanho perfeito para 720px de largura, sem vazamentos laterais (MarginL/R)
+    estilo_tiktok = "Fontname=DejaVu Sans,FontSize=22,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Alignment=2,MarginV=140,MarginL=60,MarginR=60"
     cmd = [
         "ffmpeg", "-y",
         "-i", video_input,
@@ -258,14 +265,13 @@ def aplicar_legendas_estilizadas(video_input, legenda_input, video_output="video
     ]
     try:
         subprocess.run(cmd, check=True)
-        print(f"[Sucesso] Vídeo pronto com proporções corretas e legendas dinâmicas: {video_output}")
+        print(f"[Sucesso] Vídeo mobile 100% simétrico pronto: {video_output}")
         return True
     except Exception as e:
         print(f"[Erro nas Legendas] Falha ao embutir texto: {e}")
         return False
 
 def main():
-    # Banco de ideias do canal "Resenha do Front" para rotatividade total
     lista_temas = [
         "A história secreta por trás do surgimento da cultura Rave e do movimento Acid House",
         "Como a queda do Muro de Berlim deu origem ao Techno industrial que conhecemos hoje",
@@ -284,7 +290,6 @@ def main():
         "O mistério dos DJs mascarados: por que o anonimato atrai tanta atenção na cena eletrônica"
     ]
     
-    # Sorteia um assunto inédito a cada clique
     tema_do_video = random.choice(lista_temas)
     print(f"[Tema Sorteado] Iniciando produção do conteúdo: '{tema_do_video}'")
     
