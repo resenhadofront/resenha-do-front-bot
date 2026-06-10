@@ -1,13 +1,15 @@
 import os
 import asyncio
-import google.generativeai as genai
+from groq import Groq
 import edge_tts
 import requests
 
-# 1. Configurações das chaves secretas
-gemini_key = os.environ.get("GROQ_API_KEY")
-genai.configure(api_key=gemini_key)
+# 1. Configurações das chaves secretas vindas do GitHub Secrets
+groq_key = os.environ.get("GROQ_API_KEY")
 pexels_key = os.environ.get("PEXELS_API_KEY")
+
+# Inicializa o cliente da Groq
+client = Groq(api_key=groq_key)
 
 async def gerar_voz(texto, arquivo_saida="audio.mp3"):
     """Transforma o texto do roteiro em um arquivo de áudio de graça"""
@@ -17,7 +19,7 @@ async def gerar_voz(texto, arquivo_saida="audio.mp3"):
     print(f"[Sucesso] Áudio gerado e salvo como: {arquivo_saida}")
 
 def gerar_roteiro(tema):
-    """Pede ao Gemini para criar o roteiro com sistema de fallback contra bloqueios"""
+    """Pede ao Llama 3 (via Groq) para criar o roteiro focado em retenção"""
     prompt_sistema = """
     Você é um roteirista profissional do TikTok especialista no nicho de música eletrônica.
     Seu objetivo é criar roteiros magnéticos, informativos e rápidos baseados no tema enviado.
@@ -30,26 +32,16 @@ def gerar_roteiro(tema):
     5. Termine com uma Chamada para Ação instigando um debate nos comentários.
     """
     
-    # Lista de modelos gratuitos para o robô testar em sequência caso o GitHub seja rejeitado
-    modelos_para_testar = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
-    
-    for modelo in modelos_para_testar:
-        try:
-            print(f"[Tentativa] Solicitando roteiro usando o modelo: {modelo}...")
-            model = genai.GenerativeModel(
-                model_name=modelo,
-                system_instruction=prompt_sistema
-            )
-            response = model.generate_content(f"Crie um roteiro sobre o seguinte tema: {tema}")
-            
-            # Se chegou até aqui sem estourar erro, funcionou!
-            print(f"[Sucesso] Roteiro gerado com o modelo {modelo}!")
-            return response.text
-        except Exception as e:
-            print(f"[Aviso] O modelo {modelo} falhou devido aos limites da nuvem. Tentando o próximo...")
-            
-    # Se sair do loop sem retornar, avisa o motivo real
-    raise Exception("O Google bloqueou todos os modelos gratuitos para o servidor do GitHub. Precisaremos usar o plano B.")
+    # Usando o Llama 3 8B, modelo gratuito, estável e incrivelmente veloz na Groq
+    completion = client.chat.completions.create(
+        model="llama3-8b-8192",
+        messages=[
+            {"role": "system", "content": prompt_sistema},
+            {"role": "user", "content": f"Crie um roteiro sobre o seguinte tema: {tema}"}
+        ],
+        temperature=0.7,
+    )
+    return completion.choices[0].message.content
 
 def baixar_videos_pexels(query="rave festival", quantidade=3):
     """Busca e baixa clipes na vertical (estilo TikTok) do Pexels totalmente de graça"""
@@ -92,7 +84,7 @@ def baixar_videos_pexels(query="rave festival", quantidade=3):
 def main():
     tema_do_video = "A história secreta por trás do surgimento da cultura Rave e do movimento Acid House"
     
-    print(f"[Passo 1] Acionando o Gemini para criar o roteiro...")
+    print(f"[Passo 1] Acionando a Groq (Llama 3) para criar o roteiro...")
     try:
         roteiro = gerar_roteiro(tema_do_video)
         print("\n--- Roteiro Gerado ---")
@@ -104,6 +96,8 @@ def main():
         
         print("\n[Passo 3] Coletando imagens do front no Pexels...")
         baixar_videos_pexels(query="electronic music festival", quantidade=3)
+        
+        print("\n[Fim] Script finalizado. Texto, Áudio e Vídeos coletados com sucesso na nuvem!")
         
     except Exception as err:
         print(f"\n[Erro Geral] {err}")
