@@ -5,7 +5,7 @@ import edge_tts
 import requests
 
 # 1. Configurações das chaves secretas
-gemini_key = os.environ.get("GEMINI_API_KEY")
+gemini_key = os.environ.get("GROQ_API_KEY")
 genai.configure(api_key=gemini_key)
 pexels_key = os.environ.get("PEXELS_API_KEY")
 
