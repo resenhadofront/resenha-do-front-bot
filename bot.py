@@ -3,6 +3,7 @@ import asyncio
 from groq import Groq
 import edge_tts
 import requests
+from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips
 
 # 1. Configurações das chaves secretas vindas do GitHub Secrets
 groq_key = os.environ.get("GROQ_API_KEY")
@@ -12,14 +13,14 @@ pexels_key = os.environ.get("PEXELS_API_KEY")
 client = Groq(api_key=groq_key)
 
 async def gerar_voz(texto, arquivo_saida="audio.mp3"):
-    """Transforma o texto do roteiro em um arquivo de áudio de graça"""
+    """Transforma o texto do roteiro num arquivo de áudio de forma gratuita"""
     voz_selecionada = "pt-BR-AntonioNeural"
     communicate = edge_tts.Communicate(texto, voz_selecionada)
     await communicate.save(arquivo_saida)
     print(f"[Sucesso] Áudio gerado e salvo como: {arquivo_saida}")
 
 def gerar_roteiro(tema):
-    """Pede ao Llama (via Groq) para criar o roteiro com sistema de redundância"""
+    """Pede ao Llama (via Groq) para criar o roteiro focado em retenção"""
     prompt_sistema = """
     Você é um roteirista profissional do TikTok especialista no nicho de música eletrônica.
     Seu objetivo é criar roteiros magnéticos, informativos e rápidos baseados no tema enviado.
@@ -32,7 +33,6 @@ def gerar_roteiro(tema):
     5. Termine com uma Chamada para Ação instigando um debate nos comentários.
     """
     
-    # Lista de modelos atualizados da Groq caso algum seja desativado no futuro
     modelos_groq = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"]
     
     for modelo in modelos_groq:
@@ -49,11 +49,11 @@ def gerar_roteiro(tema):
             print(f"[Sucesso] Roteiro gerado com o modelo {modelo}!")
             return completion.choices[0].message.content
         except Exception as e:
-            print(f"[Aviso] O modelo {modelo} falhou ou mudou. Tentando o próximo da lista...")
+            print(f"[Aviso] O modelo {modelo} falhou. Tentando o próximo da lista...")
             
-    raise Exception("Todos os modelos da Groq falharam. Verifique o console da Groq.")
+    raise Exception("Todos os modelos da Groq falharam.")
 
-def baixar_videos_pexels(query="rave festival", quantidade=3):
+def baixar_videos_pexels(query="rave festival", quantidade=4):
     """Busca e baixa clipes na vertical (estilo TikTok) do Pexels totalmente de graça"""
     print(f"[Iniciando] Buscando vídeos no Pexels para o termo: '{query}'...")
     headers = {"Authorization": pexels_key}
@@ -85,11 +85,55 @@ def baixar_videos_pexels(query="rave festival", quantidade=3):
                     f.write(res.content)
                 arquivos_baixados.append(nome_arquivo)
         
-        print(f"[Sucesso] {len(arquivos_baixados)} vídeos de fundo baixados com sucesso!")
+        print(f"[Sucesso] {len(arquivos_baixados)} vídeos de fundo baixados!")
         return arquivos_baixados
     except Exception as e:
         print(f"[Erro] Falha ao conectar ou baixar do Pexels: {e}")
         return []
+
+def editar_video_final(videos, audio_path, output_path="video_final.mp4"):
+    """Junta os vídeos de fundo, insere o áudio e faz a renderização na nuvem"""
+    print("\n[Passo 4] Iniciando a edição e montagem do vídeo com o MoviePy...")
+    try:
+        # Carrega o áudio gerado e verifica o seu tamanho
+        audio_clip = AudioFileClip(audio_path)
+        duracao_audio = audio_clip.duration
+        print(f"Duração exata do áudio: {duracao_audio:.2f} segundos.")
+
+        # Carrega todos os clipes de vídeo descarregados
+        clips_video = [VideoFileClip(v) for v in videos]
+        
+        # Concatena os clipes um atrás do outro de forma suave
+        video_concatenado = concatenate_videoclips(clips_video, method="compose")
+        
+        # Junta o áudio ao bloco de vídeo
+        video_final = video_concatenado.set_audio(audio_clip)
+        
+        # Corta o excesso de vídeo para terminar exatamente junto com o áudio
+        if video_final.duration > duracao_audio:
+            video_final = video_final.subclip(0, duracao_audio)
+            
+        print("Renderizando o arquivo final 'video_final.mp4' na memória da nuvem...")
+        # Executa a renderização otimizada para o ecossistema mobile
+        video_final.write_videofile(
+            output_path,
+            fps=24,
+            codec="libx264",
+            audio_codec="aac",
+            logger=None # Desativa logs extensos para poupar o console do GitHub
+        )
+        
+        # Fecha os arquivos para libertar a memória RAM do servidor
+        audio_clip.close()
+        video_final.close()
+        for c in clips_video:
+            c.close()
+            
+        print(f"[Sucesso] Vídeo final editado e gerado: {output_path}")
+        return True
+    except Exception as e:
+        print(f"[Erro na Edição] Falha ao montar o vídeo com o MoviePy: {e}")
+        return False
 
 def main():
     tema_do_video = "A história secreta por trás do surgimento da cultura Rave e do movimento Acid House"
@@ -105,9 +149,16 @@ def main():
         asyncio.run(gerar_voz(roteiro))
         
         print("\n[Passo 3] Coletando imagens do front no Pexels...")
-        baixar_videos_pexels(query="electronic music festival", quantidade=3)
+        # Aumentamos para 4 vídeos para garantir que cobrimos toda a duração do áudio
+        videos_baixados = baixar_videos_pexels(query="electronic music festival", quantidade=4)
         
-        print("\n[Fim] Script finalizado. Texto, Áudio e Vídeos coletados com sucesso na nuvem!")
+        if videos_baixados:
+            # Junta tudo no editor robotizado
+            editar_video_final(videos_baixados, "audio.mp3")
+        else:
+            print("[Erro] Falha no Passo 3. Interrompendo a montagem do vídeo.")
+            
+        print("\n[Fim] Script finalizado com sucesso na nuvem!")
         
     except Exception as err:
         print(f"\n[Erro Geral] {err}")
