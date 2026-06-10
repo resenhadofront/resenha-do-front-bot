@@ -1,5 +1,6 @@
 import os
 import subprocess
+import random
 from groq import Groq
 import requests
 from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips
@@ -47,7 +48,7 @@ def gerar_voz_e_legenda(texto, audio_path="audio.mp3", sub_path="legenda_crua.sr
         print(f"[Erro no Voice] Falha ao rodar o gerador de voz: {e}")
         return False
 
-def fracionar_legenda_srt(caminho_original, caminho_novo, palavras_por_cena=3):
+def fracionar_legenda_srt(caminho_original, caminho_novo, palavras_por_scene=3):
     """Fatia as frases longas em blocos dinâmicos de 3 palavras (Estilo TikTok Viral)"""
     import re
     from datetime import timedelta
@@ -96,7 +97,7 @@ def fracionar_legenda_srt(caminho_original, caminho_novo, palavras_por_cena=3):
         if not palavras:
             continue
             
-        pedacos = [palavras[i:i + palavras_por_cena] for i in range(0, len(palavras), palavras_por_cena)]
+        pedacos = [palavras[i:i + palavras_por_scene] for i in range(0, len(palavras), palavras_por_scene)]
         total_palavras = len(palavras)
         
         tempo_acumulado = inicio
@@ -169,19 +170,22 @@ def gerar_termos_busca_visuais(roteiro):
         return ["underground rave crowd", "techno dj lighting", "electronic music festival", "dancing club portrait"]
 
 def baixar_videos_pexels_dinamico(queries):
-    """Baixa um clipe vertical do Pexels para cada um dos termos dinâmicos"""
-    print("\n[Passo 3] Iniciando coleta de mídia dinâmica baseada no contexto...")
+    """Baixa um clipe vertical aleatório do Pexels dentro dos resultados para evitar repetição"""
+    print("\n[Passo 3] Iniciando coleta de mídia dinâmica e randômica...")
     headers = {"Authorization": pexels_key}
     arquivos_baixados = []
     
     for i, query in enumerate(queries):
         print(f"Buscando clipe {i+1}/4 para o conceito: '{query}'...")
-        url = f"https://api.pexels.com/v1/videos/search?query={query}&per_page=1&orientation=portrait"
+        # Solicitamos 15 resultados para fazer um sorteio aleatório entre eles
+        url = f"https://api.pexels.com/v1/videos/search?query={query}&per_page=15&orientation=portrait"
         try:
             response = requests.get(url, headers=headers)
             data = response.json()
             if "videos" in data and len(data["videos"]) > 0:
-                video_files = data["videos"][0].get("video_files", [])
+                # Sorteia um dos 15 vídeos retornados
+                video_selecionado = random.choice(data["videos"])
+                video_files = video_selecionado.get("video_files", [])
                 video_url = None
                 for f_file in video_files:
                     if f_file.get("file_type") == "video/mp4":
@@ -193,7 +197,7 @@ def baixar_videos_pexels_dinamico(queries):
                     with open(nome_arquivo, "wb") as f:
                         f.write(res.content)
                     arquivos_baixados.append(nome_arquivo)
-                    print(f"-> Clipe '{nome_arquivo}' baixado com sucesso!")
+                    print(f"-> Clipe aleatório '{nome_arquivo}' baixado com sucesso!")
             else:
                 print(f"-> Sem resultados para '{query}'. Pulando...")
         except Exception as e:
@@ -261,7 +265,29 @@ def aplicar_legendas_estilizadas(video_input, legenda_input, video_output="video
         return False
 
 def main():
-    tema_do_video = "A história secreta por trás do surgimento da cultura Rave e do movimento Acid House"
+    # Banco de ideias do canal "Resenha do Front" para rotatividade total
+    lista_temas = [
+        "A história secreta por trás do surgimento da cultura Rave e do movimento Acid House",
+        "Como a queda do Muro de Berlim deu origem ao Techno industrial que conhecemos hoje",
+        "O mistério do som underground: por que o sintetizador Roland TB-303 mudou tudo",
+        "Por que o clube Tresor em Berlim é considerado o templo sagrado do Techno mundial",
+        "A evolução dos sound systems: de caixas caseiras aos paredões colossais do front",
+        "Como o icônico DJ Carl Cox se tornou o rei incontestável das pistas de dança",
+        "A cultura raiz do vinil: por que os DJs clássicos ainda preferem a mixagem analógica",
+        "O que acontece com a mente humana quando entra na frequência pura do Grave no front",
+        "A proibição histórica das raves no Reino Unido e a lei que tentou banir batidas repetitivas",
+        "O ritual dos clubbers dos anos 90 e como nasceu o verdadeiro espírito PLUR",
+        "A história oculta de Frankie Knuckles e o nascimento revolucionário da House Music em Chicago",
+        "Por que as pistas mais conceituadas do mundo proíbem celulares e câmeras no front",
+        "A genialidade sombria por trás das produções do Kraftwerk, os avós da música eletrônica",
+        "Como a ilha de Ibiza se transformou na capital mundial da curtição e dos super clubes",
+        "O mistério dos DJs mascarados: por que o anonimato atrai tanta atenção na cena eletrônica"
+    ]
+    
+    # Sorteia um assunto inédito a cada clique
+    tema_do_video = random.choice(lista_temas)
+    print(f"[Tema Sorteado] Iniciando produção do conteúdo: '{tema_do_video}'")
+    
     print("[Passo 1] Solicitando roteiro otimizado para retenção...")
     try:
         roteiro_bruto = gerar_roteiro(tema_do_video)
@@ -273,7 +299,7 @@ def main():
         if not gerar_voz_e_legenda(roteiro_limpo, "audio.mp3", "legenda_crua.srt"):
             raise Exception("Erro ao gerar voz e legenda.")
             
-        fracionar_legenda_srt("legenda_crua.srt", "legenda.srt", palavras_por_cena=3)
+        fracionar_legenda_srt("legenda_crua.srt", "legenda.srt", palavras_por_scene=3)
         
         termos_visuais = gerar_termos_busca_visuais(roteiro_limpo)
         print(f"Conceitos visuais definidos pelo Bot: {termos_visuais}")
