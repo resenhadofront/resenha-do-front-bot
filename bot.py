@@ -15,13 +15,11 @@ def limpar_roteiro_ia(texto_bruto):
     texto_sem_markdown = texto_bruto.replace("**", "").replace("*", "").replace("#", "")
     linhas = texto_sem_markdown.split("\n")
     linhas_limpas = []
-    
     tags_proibidas = ["gancho", "chamada", "introdução", "parágrafo", "roteiro", "narrador", "cena", "texto", "cta"]
     
     for linha in linhas:
         linha_limpa = linha.strip()
         linha_min = linha_limpa.lower()
-        
         if any(tag in linha_min for tag in tags_proibidas) and (len(linha_limpa) < 30 or ":" in linha_limpa):
             continue
         if linha_limpa.startswith("[") or linha_limpa.startswith("("):
@@ -43,7 +41,7 @@ def gerar_voz_e_legenda(texto, audio_path="audio.mp3", sub_path="legenda_crua.sr
     ]
     try:
         subprocess.run(cmd, check=True)
-        print(f"[Sucesso] Áudio e Legendas base gerados!")
+        print("[Sucesso] Áudio e Legendas base gerados!")
         return True
     except Exception as e:
         print(f"[Erro no Voice] Falha ao rodar o gerador de voz: {e}")
@@ -83,7 +81,7 @@ def fracionar_legenda_srt(caminho_original, caminho_novo, palavras_por_cena=3):
         if len(linhas) < 3:
             continue
         
-        tempo_str = lines[1] if 'lines' in locals() else linhas[1]
+        tempo_str = linhas[1]
         texto = " ".join(linhas[2:])
         
         match = re.match(r'(\d+:\d+:\d+,\d+)\s*-->\s*(\d+:\d+:\d+,\d+)', tempo_str)
@@ -108,7 +106,6 @@ def fracionar_legenda_srt(caminho_original, caminho_novo, palavras_por_cena=3):
             duracao_pedaco = duracao_total * proporcao
             
             tempo_fim_pedaco = tempo_acumulado + timedelta(seconds=duracao_pedaco)
-            
             novos_blocos.append(f"{index_geral}\n{time_to_str(tempo_acumulado)} --> {time_to_str(tempo_fim_pedaco)}\n{texto_pedaco}")
             index_geral += 1
             tempo_acumulado = tempo_fim_pedaco
@@ -125,7 +122,7 @@ def gerar_roteiro(tema):
 
     ESTRUTURA DA NARRATIVA:
     1. GANCHO DE RETENÇÃO (0-5s): Comece com uma afirmação chocante ou uma pergunta intrigante. Proibido saudações (nada de 'Olá galera').
-    2. CONTEXTO RÍTMICO (5-45s): Escreva in frases curtas e diretas. Use termos do front de forma orgânica. Crie tensão e curiosidade.
+    2. CONTEXTO RÍTMICO (5-45s): Escreva em frases curtas e diretas. Use termos do front de forma orgânica. Crie tensão e curiosidade.
     3. CHAMADA PARA AÇÃO (45-60s): Termine com uma pergunta polêmica que force o espectador a comentar e debater.
 
     REGRAS ESTRITAS DE FORMATO:
@@ -210,23 +207,92 @@ def editar_video_base(videos, audio_path, output_path="video_cru.mp4"):
     try:
         audio_clip = AudioFileClip(audio_path)
         duracao_audio = audio_clip.duration
-
         clips_video_processados = []
+        
         for v in videos:
             clip = VideoFileClip(v)
-            
-            # MÁGICA AQUI: Força a altura para 1280 mantendo a proporção original
             clip_redimensionado = clip.resize(height=1280)
-            
-            # Recorta a largura para exatamente 720 a partir do centro do vídeo
             w, h = clip_redimensionado.size
             clip_cortado = clip_redimensionado.crop(x1=(w - 720) // 2, y1=0, x2=(w + 720) // 2, y2=1280)
-            
             clips_video_processados.append(clip_cortado)
 
-        # Concatena os clipes já padronizados perfeitamente
         video_concatenado = concatenate_videoclips(clips_video_processados, method="compose")
         video_final = video_concatenado.set_audio(audio_clip)
         
         if video_final.duration > duracao_audio:
-            video_final
+            video_final = video_final.subclip(0, duracao_audio)
+            
+        video_final.write_videofile(
+            output_path,
+            fps=24,
+            codec="libx264",
+            audio_codec="aac",
+            logger=None
+        )
+        
+        audio_clip.close()
+        video_final.close()
+        for c in clips_video_processados:
+            c.close()
+            
+        print("[Sucesso] Vídeo base estruturado em 720x1280!")
+        return True
+    except Exception as e:
+        print(f"[Erro de Edição] Falha na montagem básica: {e}")
+        return False
+
+def aplicar_legendas_estilizadas(video_input, legenda_input, video_output="video_final.mp4"):
+    """Renderiza a legenda centralizada em baixo com margens estritas de quebra de linha"""
+    print("\n[Passo 5] Aplicando legendas dinâmicas corrigidas via FFmpeg...")
+    estilo_tiktok = "Fontname=DejaVu Sans,FontSize=20,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Alignment=2,MarginV=130,MarginL=50,MarginR=50"
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", video_input,
+        "-vf", f"subtitles={legenda_input}:force_style='{estilo_tiktok}'",
+        "-c:a", "copy",
+        video_output
+    ]
+    try:
+        subprocess.run(cmd, check=True)
+        print(f"[Sucesso] Vídeo pronto com proporções corretas e legendas dinâmicas: {video_output}")
+        return True
+    except Exception as e:
+        print(f"[Erro nas Legendas] Falha ao embutir texto: {e}")
+        return False
+
+def main():
+    tema_do_video = "A história secreta por trás do surgimento da cultura Rave e do movimento Acid House"
+    print("[Passo 1] Solicitando roteiro otimizado para retenção...")
+    try:
+        roteiro_bruto = gerar_roteiro(tema_do_video)
+        roteiro_limpo = limpar_roteiro_ia(roteiro_bruto)
+        print("\n--- Roteiro Final Organizado ---")
+        print(roteiro_limpo)
+        print("--------------------------------\n")
+        
+        if not gerar_voz_e_legenda(roteiro_limpo, "audio.mp3", "legenda_crua.srt"):
+            raise Exception("Erro ao gerar voz e legenda.")
+            
+        fracionar_legenda_srt("legenda_crua.srt", "legenda.srt", palavras_por_cena=3)
+        
+        termos_visuais = gerar_termos_busca_visuais(roteiro_limpo)
+        print(f"Conceitos visuais definidos pelo Bot: {termos_visuais}")
+        
+        videos_baixados = baixar_videos_pexels_dinamico(termos_visuais)
+        
+        if len(videos_baixados) >= 2:
+            if not editar_video_base(videos_baixados, "audio.mp3", "video_cru.mp4"):
+                raise Exception("Erro na criação do vídeo base.")
+                
+            if not aplicar_legendas_estilizadas("video_cru.mp4", "legenda.srt", "video_final.mp4"):
+                raise Exception("Erro na aplicação das legendas.")
+        else:
+            raise Exception("Mídias insuficientes baixadas do Pexels.")
+            
+        print("\n[Fim] Script executado com sucesso completo!")
+    except Exception as err:
+        print(f"\n[Erro Geral Contido] {err}")
+        exit(1)
+
+if __name__ == "__main__":
+    main()
