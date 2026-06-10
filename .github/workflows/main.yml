@@ -1,7 +1,7 @@
 name: Executar Robo Resenha do Front
 
 on:
-  workflow_dispatch: # Isso ativa um botão para você rodar o robô manualmente quando quiser
+  workflow_dispatch: # Ativa o botão para rodar manualmente
 
 jobs:
   construir-e-rodar:
@@ -27,6 +27,6 @@ jobs:
     # 4. Roda o script injetando as chaves que guardamos nos Secrets
     - name: Executando o Script do Robô
       env:
-        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
       run: python bot.py
