@@ -29,8 +29,10 @@ def gerar_roteiro(tema):
     4. Divida apenas em parágrafos corridos, sem direções de cena parentéticas.
     5. Termine com uma Chamada para Ação instigando um debate nos comentários.
     """
+    
+    # ATUALIZADO: Mudamos para a versão estável mais recente do modelo Flash
     model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
+        model_name="gemini-2.0-flash",
         system_instruction=prompt_sistema
     )
     response = model.generate_content(f"Crie um roteiro sobre o seguinte tema: {tema}")
@@ -41,7 +43,6 @@ def baixar_videos_pexels(query="rave festival", quantidade=3):
     print(f"[Iniciando] Buscando vídeos no Pexels para o termo: '{query}'...")
     headers = {"Authorization": pexels_key}
     
-    # O truque está aqui: 'orientation=portrait' garante vídeos em pé prontos pro TikTok!
     url = f"https://api.pexels.com/v1/videos/search?query={query}&per_page={quantidade}&orientation=portrait"
     
     try:
@@ -57,7 +58,6 @@ def baixar_videos_pexels(query="rave festival", quantidade=3):
             video_files = video.get("video_files", [])
             video_url = None
             
-            # Filtra para encontrar o arquivo no formato MP4 correto
             for f_file in video_files:
                 if f_file.get("file_type") == "video/mp4":
                     video_url = f_file.get("link")
@@ -90,7 +90,6 @@ def main():
     asyncio.run(gerar_voz(roteiro))
     
     print("\n[Passo 3] Coletando imagens do front no Pexels...")
-    # O robô vai buscar clipes de festivais eletrônicos na vertical para usar de fundo
     baixar_videos_pexels(query="electronic music festival", quantidade=3)
 
 if __name__ == "__main__":
