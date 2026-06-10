@@ -15,7 +15,6 @@ client = Groq(api_key=groq_key)
 def limpar_roteiro_ia(texto_bruto):
     """Remove marcações estruturais e tags que a IA teima em colocar no texto"""
     texto_sem_markdown = texto_bruto.replace("**", "").replace("*", "").replace("#", "")
-    
     linhas = texto_sem_markdown.split("\n")
     linhas_limpas = []
     
@@ -25,14 +24,10 @@ def limpar_roteiro_ia(texto_bruto):
         linha_limpa = linha.strip()
         linha_min = linha_limpa.lower()
         
-        # Ignora linhas que sirvam apenas de títulos de blocos ou metatags
         if any(tag in linha_min for tag in tags_proibidas) and (len(linha_limpa) < 30 or ":" in linha_limpa):
             continue
-            
-        # Remove eventuais textos entre colchetes ou parênteses (direções de cena)
         if linha_limpa.startswith("[") or linha_limpa.startswith("("):
             continue
-            
         if linha_limpa:
             linhas_limpas.append(linha_limpa)
             
@@ -52,17 +47,16 @@ def gerar_roteiro(tema):
     Seu trabalho é transformar fatos históricos, curiosidades de DJs e segredos do front em vídeos virais magnéticos.
 
     ESTRUTURA DA NARRATIVA:
-    1. GANCHO DE RETENÇÃO (0-5s): Comece com uma afirmação chocante, uma pergunta intrigante ou uma quebra de padrão direta. Proibido saudações (nada de 'Olá galera', 'Sejam bem-vindos').
-    2. CONTEXTO RÍTMICO (5-45s): Escreva em frases curtas e diretas. Use termos do front (pista, linha de baixo, sintetizador, cabine, rave) de forma orgânica. Crie tensão e curiosidade.
-    3. CHAMADA PARA AÇÃO DE ALTO ATRITO (45-60s): Termine com uma pergunta instigante ou polêmica que force o espectador a comentar e debater na publicação.
+    1. GANCHO DE RETENÇÃO (0-5s): Comece com uma afirmação chocante ou uma pergunta intrigante. Proibido saudações (nada de 'Olá galera').
+    2. CONTEXTO RÍTMICO (5-45s): Escreva em frases curtas e diretas. Use termos do front de forma orgânica. Crie tensão e curiosidade.
+    3. CHAMADA PARA AÇÃO (45-60s): Termine com uma pergunta polêmica que force o espectador a comentar e debater.
 
     REGRAS ESTRITAS DE FORMATO:
     - Retorne APENAS o texto corrido a ser lido.
-    - É terminantemente proibido usar títulos como 'Gancho:', 'Narrador:', ou usar marcas de cena como '(fundo musical)'.
+    - É proibido usar títulos como 'Gancho:', 'Narrador:', ou marcas de cena.
     - Não use nenhuma formatação em Markdown (como asteriscos).
     - O tamanho total deve ficar entre 125 e 145 palavras.
     """
-    
     try:
         completion = client.chat.completions.create(
             model="llama-3.1-8b-instant",
@@ -79,12 +73,9 @@ def gerar_roteiro(tema):
 def gerar_termos_busca_visuais(roteiro):
     """Pede à IA para analisar o roteiro e criar 4 termos de busca visuais em inglês para o Pexels"""
     prompt_sistema = """
-    Você é um diretor de arte de vídeos curtos. Analise o roteiro em português fornecido e crie exatamente 4 termos de busca diferentes em inglês para encontrar vídeos verticais de cobertura (b-roll) no Pexels.
-    Os termos devem ser puramente visuais, focados em música eletrônica, raves, DJs e estética de luzes.
-
-    FORMATO DA RESPOSTA:
-    Retorne APENAS os 4 termos separados por vírgula em uma única linha. Não inclua números, explicações ou introduções.
-    Exemplo de retorno esperado: berlin techno club, dj mixing vinyl, rave strobe lights, crowd dancing portrait
+    Você é um diretor de arte de vídeos curtos. Analise o roteiro fornecido e crie exatamente 4 termos de busca diferentes em inglês para encontrar vídeos verticais no Pexels. Foco em música eletrônica, raves e DJs.
+    Retorne APENAS os 4 termos separados por vírgula em uma única linha. Não inclua números ou explicações.
+    Exemplo: berlin techno club, dj mixing vinyl, rave strobe lights, crowd dancing portrait
     """
     try:
         completion = client.chat.completions.create(
@@ -97,7 +88,6 @@ def gerar_termos_busca_visuais(roteiro):
         )
         termos = completion.choices[0].message.content.strip()
         lista_termos = [t.strip() for t in termos.split(",") if t.strip()]
-        # Fallback caso a IA não obedeça o formato de lista por vírgula
         if len(lista_termos) < 2:
             return ["underground rave crowd", "techno dj lighting", "electronic music festival", "dancing club portrait"]
         return lista_termos[:4]
@@ -105,5 +95,98 @@ def gerar_termos_busca_visuais(roteiro):
         return ["underground rave crowd", "techno dj lighting", "electronic music festival", "dancing club portrait"]
 
 def baixar_videos_pexels_dinamico(queries):
-    """Baixa um clipe vertical do Pexels para cada um dos termos dinâmicos gerados pela IA"""
-    print(
+    """Baixa um clipe vertical do Pexels para cada um dos termos dinâmicos"""
+    print("\n[Passo 3] Iniciando coleta de mídia dinâmica baseada no contexto...")
+    headers = {"Authorization": pexels_key}
+    arquivos_baixados = []
+    
+    for i, query in enumerate(queries):
+        print(f"Buscando clipe {i+1}/4 para o conceito: '{query}'...")
+        url = f"https://api.pexels.com/v1/videos/search?query={query}&per_page=1&orientation=portrait"
+        try:
+            response = requests.get(url, headers=headers)
+            data = response.json()
+            if "videos" in data and len(data["videos"]) > 0:
+                video_files = data["videos"][0].get("video_files", [])
+                video_url = None
+                for f_file in video_files:
+                    if f_file.get("file_type") == "video/mp4":
+                        video_url = f_file.get("link")
+                        break
+                if video_url:
+                    nome_arquivo = f"video_{i}.mp4"
+                    res = requests.get(video_url)
+                    with open(nome_arquivo, "wb") as f:
+                        f.write(res.content)
+                    arquivos_baixados.append(nome_arquivo)
+                    print(f"-> Clipe '{nome_arquivo}' baixado com sucesso!")
+            else:
+                print(f"-> Sem resultados para '{query}'. Pulando...")
+        except Exception as e:
+            print(f"-> Erro ao buscar termo '{query}': {e}")
+            
+    return arquivos_baixados
+
+def editar_video_final(videos, audio_path, output_path="video_final.mp4"):
+    """Une a colagem de mídias dinâmicas com o áudio final na nuvem"""
+    print("\n[Passo 4] Iniciando a montagem e renderização com o MoviePy...")
+    try:
+        audio_clip = AudioFileClip(audio_path)
+        duracao_audio = audio_clip.duration
+        print(f"Duração exata do áudio gerado: {duracao_audio:.2f} segundos.")
+
+        clips_video = [VideoFileClip(v) for v in videos]
+        video_concatenado = concatenate_videoclips(clips_video, method="compose")
+        video_final = video_concatenado.set_audio(audio_clip)
+        
+        if video_final.duration > duracao_audio:
+            video_final = video_final.subclip(0, duracao_audio)
+            
+        print("Renderizando mixagem audiovisual...")
+        video_final.write_videofile(
+            output_path,
+            fps=24,
+            codec="libx264",
+            audio_codec="aac",
+            logger=None
+        )
+        
+        audio_clip.close()
+        video_final.close()
+        for c in clips_video:
+            c.close()
+            
+        print(f"[Sucesso] Edição concluída: {output_path}")
+        return True
+    except Exception as e:
+        print(f"[Erro de Edição] Falha na montagem do MoviePy: {e}")
+        return False
+
+def main():
+    tema_do_video = "A história secreta por trás do surgimento da cultura Rave e do movimento Acid House"
+    print("[Passo 1] Solicitando roteiro otimizado para retenção...")
+    try:
+        roteiro_bruto = gerar_roteiro(tema_do_video)
+        roteiro_limpo = limpar_roteiro_ia(roteiro_bruto)
+        print("\n--- Roteiro Final Organizado ---")
+        print(roteiro_limpo)
+        print("--------------------------------\n")
+        
+        print("[Passo 2] Gerando áudio da narração limpa...")
+        asyncio.run(gerar_voz(roteiro_limpo))
+        
+        termos_visuais = gerar_termos_busca_visuais(roteiro_limpo)
+        print(f"Conceitos visuais definidos pelo Bot: {termos_visuais}")
+        
+        videos_baixados = baixar_videos_pexels_dinamico(termos_visuais)
+        if len(videos_baixados) >= 2:
+            editar_video_final(videos_baixados, "audio.mp3")
+        else:
+            print("[Erro] Mídias insuficientes para gerar a colagem de vídeo.")
+        print("\n[Fim] Script executado.")
+    except Exception as err:
+        print(f"\n[Erro Geral] {err}")
+        exit(1)
+
+if __name__ == "__main__":
+    main()
