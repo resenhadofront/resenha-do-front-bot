@@ -1,3 +1,4 @@
 groq
 edge-tts
 requests
+moviepy
