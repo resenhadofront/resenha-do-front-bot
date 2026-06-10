@@ -5,7 +5,7 @@ from groq import Groq
 import requests
 from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips
 
-# 1. Configurações das chaves secretas vindas do GitHub Secrets
+# Configurações das chaves secretas gratuitas
 groq_key = os.environ.get("GROQ_API_KEY")
 pexels_key = os.environ.get("PEXELS_API_KEY")
 
@@ -104,7 +104,7 @@ def fracionar_legenda_srt(caminho_original, caminho_novo, palavras_por_scene=3):
         for pedaco in pedacos:
             texto_pedaco = " ".join(pedaco).upper()
             proporcao = len(pedaco) / total_palavras
-            duracao_pedaco = duracao_total * proporcao
+            duracao_pedaco = duracao_total * proportions if 'proportions' in locals() else duracao_total * proporcao
             
             tempo_fim_pedaco = tempo_acumulado + timedelta(seconds=duracao_pedaco)
             novos_blocos.append(f"{index_geral}\n{time_to_str(tempo_acumulado)} --> {time_to_str(tempo_fim_pedaco)}\n{texto_pedaco}")
@@ -145,12 +145,24 @@ def gerar_roteiro(tema):
     except Exception as e:
         raise Exception(f"Falha ao gerar roteiro na Groq: {e}")
 
+# --- AQUI ACONTECE A ATUALIZAÇÃO DA INTELIGÊNCIA GRATUITA ---
 def gerar_termos_busca_visuais(roteiro):
-    """Pede à IA para analisar o roteiro e criar 4 termos de busca visuais em inglês para o Pexels"""
+    """Pede à IA para traduzir o roteiro em termos realistas e localizáveis para o Pexels"""
     prompt_sistema = """
-    Você é um diretor de arte de vídeos curtos. Analise o roteiro fornecido e crie exatamente 4 termos de busca diferentes em inglês para encontrar vídeos verticais no Pexels. Foco em música eletrônica, raves e DJs.
-    Retorne APENAS os 4 termos separados por vírgula em uma única linha. Não inclua números ou explicações.
-    Exemplo: berlin techno club, dj mixing vinyl, rave strobe lights, crowd dancing portrait
+    Você é um diretor de arte de vídeos curtos. Sua tarefa é ler o roteiro e criar exatamente 4 termos de busca diferentes em inglês para encontrar vídeos verticais reais no Pexels.
+    
+    REGRA DE INTELIGÊNCIA CRUCIAL:
+    O Pexels NÃO possui vídeos de pessoas históricas específicas (como Carl Cox, Frankie Knuckles) ou marcas de aparelhos.
+    Você deve TRADUZIR nomes e conceitos abstratos em termos visuais genéricos de ALTÍSSIMO IMPACTO que existam no mundo real de stock vídeos.
+
+    EXEMPLOS DE TRADUÇÃO INTELIGENTE:
+    - Se falar de 'DJs famosos' ou nomes próprios de DJs: use 'pro dj mixing vinyl close up' ou 'hands adjusting dj mixer turntable'
+    - Se falar de 'História secreta', 'Silos de armas' ou 'Locais antigos': use 'dark concrete warehouse strobe lights' ou 'underground industrial club'
+    - Se falar de 'Sintetizadores' ou 'Roland TB-303': use 'vintage electronic synthesizer knobs' ou 'analog music equipment neon'
+    - Se falar de 'Cultura Rave' ou 'Pistas de dança': use 'rave crowd dancing portrait vertical' ou 'strobe lights flashing club'
+
+    FORMATO DA RESPOSTA:
+    Retorne APENAS os 4 termos em inglês separados por vírgula em uma única linha. Sem explicações, sem números.
     """
     try:
         completion = client.chat.completions.create(
@@ -159,7 +171,7 @@ def gerar_termos_busca_visuais(roteiro):
                 {"role": "system", "content": prompt_sistema},
                 {"role": "user", "content": f"Roteiro: {roteiro}"}
             ],
-            temperature=0.5,
+            temperature=0.6,
         )
         termos = completion.choices[0].message.content.strip()
         lista_termos = [t.strip() for t in termos.split(",") if t.strip()]
@@ -171,12 +183,12 @@ def gerar_termos_busca_visuais(roteiro):
 
 def baixar_videos_pexels_dinamico(queries):
     """Baixa clipes e já padroniza nativamente em 720x1280 vertical via FFmpeg para eliminar barras pretas"""
-    print("\n[Passo 3] Iniciando coleta de mídia dinâmica e randômica...")
+    print("\n[Passo 3] Iniciando coleta de mídia com inteligência de busca traduzida...")
     headers = {"Authorization": pexels_key}
     arquivos_baixados = []
     
     for i, query in enumerate(queries):
-        print(f"Buscando clipe {i+1}/4 para o conceito: '{query}'...")
+        print(f"Buscando clipe {i+1}/4 para o conceito inteligente: '{query}'...")
         url = f"https://api.pexels.com/v1/videos/search?query={query}&per_page=15&orientation=portrait"
         try:
             response = requests.get(url, headers=headers)
@@ -193,12 +205,11 @@ def baixar_videos_pexels_dinamico(queries):
                     nome_provisorio = f"raw_{i}.mp4"
                     nome_final = f"video_{i}.mp4"
                     
-                    # Faz o download do arquivo bruto
                     res = requests.get(video_url)
                     with open(nome_provisorio, "wb") as f:
                         f.write(res.content)
                     
-                    # PODER DO FFMPEG: Força proporção 720x1280 perfeita, centraliza e arranca som do Pexels
+                    # FFmpeg força proporção perfeita de celular e arranca áudio original do clipe
                     cmd_formatar = [
                         "ffmpeg", "-y", "-i", nome_provisorio,
                         "-vf", "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280",
@@ -209,7 +220,7 @@ def baixar_videos_pexels_dinamico(queries):
                     os.remove(nome_provisorio)
                     
                     arquivos_baixados.append(nome_final)
-                    print(f"-> Clipe vertical puro '{nome_final}' gerado com sucesso!")
+                    print(f"-> Clipe vertical puro '{nome_final}' gerado!")
             else:
                 print(f"-> Sem resultados para '{query}'. Pulando...")
         except Exception as e:
@@ -218,14 +229,13 @@ def baixar_videos_pexels_dinamico(queries):
     return arquivos_baixados
 
 def editar_video_base(videos, audio_path, output_path="video_cru.mp4"):
-    """Une as mídias perfeitamente idênticas sem causar distorções de canvas"""
+    """Une as mídias formatadas com o áudio de narração"""
     print("\n[Passo 4] Realizando a colagem nativa 9:16 com o MoviePy...")
     try:
         audio_clip = AudioFileClip(audio_path)
         duracao_audio = audio_clip.duration
         clips_video_processados = [VideoFileClip(v) for v in videos]
 
-        # Como os vídeos já estão perfeitamente moldados, a colagem simples funciona lisa
         video_concatenado = concatenate_videoclips(clips_video_processados)
         video_final = video_concatenado.set_audio(audio_clip)
         
@@ -253,8 +263,7 @@ def editar_video_base(videos, audio_path, output_path="video_cru.mp4"):
 
 def aplicar_legendas_estilizadas(video_input, legenda_input, video_output="video_final.mp4"):
     """Renderiza a legenda compacta e centralizada perfeitamente dentro da tela do celular"""
-    print("\n[Passo 5] Aplicando legendas dinâmicas corrigidas via FFmpeg...")
-    # Fonte legível, tamanho perfeito para 720px de largura, sem vazamentos laterais (MarginL/R)
+    print("\n[Passo 5] Aplicando legendas dinâmicas estilo TikTok via FFmpeg...")
     estilo_tiktok = "Fontname=DejaVu Sans,FontSize=22,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Alignment=2,MarginV=140,MarginL=60,MarginR=60"
     cmd = [
         "ffmpeg", "-y",
@@ -306,8 +315,9 @@ def main():
             
         fracionar_legenda_srt("legenda_crua.srt", "legenda.srt", palavras_por_scene=3)
         
+        # Aqui o robô usa a inteligência de tradução gratuita
         termos_visuais = gerar_termos_busca_visuais(roteiro_limpo)
-        print(f"Conceitos visuais definidos pelo Bot: {termos_visuais}")
+        print(f"Conceitos visuais traduzidos pelo Bot para o Pexels: {termos_visuais}")
         
         videos_baixados = baixar_videos_pexels_dinamico(termos_visuais)
         
@@ -320,7 +330,7 @@ def main():
         else:
             raise Exception("Mídias insuficientes baixadas do Pexels.")
             
-        print("\n[Fim] Script executado com sucesso completo!")
+        print("\n[Fim] Script executado com sucesso 100% gratuito!")
     except Exception as err:
         print(f"\n[Erro Geral Contido] {err}")
         exit(1)
