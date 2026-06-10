@@ -4,7 +4,7 @@ import google.generativeai as genai
 import edge_tts
 import requests
 
-# 1. Configurações das chaves secretas que salvamos no GitHub
+# 1. Configurações das chaves secretas
 gemini_key = os.environ.get("GEMINI_API_KEY")
 genai.configure(api_key=gemini_key)
 pexels_key = os.environ.get("PEXELS_API_KEY")
@@ -17,7 +17,7 @@ async def gerar_voz(texto, arquivo_saida="audio.mp3"):
     print(f"[Sucesso] Áudio gerado e salvo como: {arquivo_saida}")
 
 def gerar_roteiro(tema):
-    """Pede ao Gemini para criar o roteiro focado em retenção"""
+    """Pede ao Gemini para criar o roteiro com sistema de fallback contra bloqueios"""
     prompt_sistema = """
     Você é um roteirista profissional do TikTok especialista no nicho de música eletrônica.
     Seu objetivo é criar roteiros magnéticos, informativos e rápidos baseados no tema enviado.
@@ -30,19 +30,31 @@ def gerar_roteiro(tema):
     5. Termine com uma Chamada para Ação instigando um debate nos comentários.
     """
     
-    # ATUALIZADO: Mudamos para a versão estável mais recente do modelo Flash
-    model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash",
-        system_instruction=prompt_sistema
-    )
-    response = model.generate_content(f"Crie um roteiro sobre o seguinte tema: {tema}")
-    return response.text
+    # Lista de modelos gratuitos para o robô testar em sequência caso o GitHub seja rejeitado
+    modelos_para_testar = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+    
+    for modelo in modelos_para_testar:
+        try:
+            print(f"[Tentativa] Solicitando roteiro usando o modelo: {modelo}...")
+            model = genai.GenerativeModel(
+                model_name=modelo,
+                system_instruction=prompt_sistema
+            )
+            response = model.generate_content(f"Crie um roteiro sobre o seguinte tema: {tema}")
+            
+            # Se chegou até aqui sem estourar erro, funcionou!
+            print(f"[Sucesso] Roteiro gerado com o modelo {modelo}!")
+            return response.text
+        except Exception as e:
+            print(f"[Aviso] O modelo {modelo} falhou devido aos limites da nuvem. Tentando o próximo...")
+            
+    # Se sair do loop sem retornar, avisa o motivo real
+    raise Exception("O Google bloqueou todos os modelos gratuitos para o servidor do GitHub. Precisaremos usar o plano B.")
 
 def baixar_videos_pexels(query="rave festival", quantidade=3):
     """Busca e baixa clipes na vertical (estilo TikTok) do Pexels totalmente de graça"""
     print(f"[Iniciando] Buscando vídeos no Pexels para o termo: '{query}'...")
     headers = {"Authorization": pexels_key}
-    
     url = f"https://api.pexels.com/v1/videos/search?query={query}&per_page={quantidade}&orientation=portrait"
     
     try:
@@ -81,16 +93,21 @@ def main():
     tema_do_video = "A história secreta por trás do surgimento da cultura Rave e do movimento Acid House"
     
     print(f"[Passo 1] Acionando o Gemini para criar o roteiro...")
-    roteiro = gerar_roteiro(tema_do_video)
-    print("\n--- Roteiro Gerado ---")
-    print(roteiro)
-    print("----------------------\n")
-    
-    print("[Passo 2] Convertendo o texto em voz com o sistema da Microsoft...")
-    asyncio.run(gerar_voz(roteiro))
-    
-    print("\n[Passo 3] Coletando imagens do front no Pexels...")
-    baixar_videos_pexels(query="electronic music festival", quantidade=3)
+    try:
+        roteiro = gerar_roteiro(tema_do_video)
+        print("\n--- Roteiro Gerado ---")
+        print(roteiro)
+        print("----------------------\n")
+        
+        print("[Passo 2] Convertendo o texto em voz com o sistema da Microsoft...")
+        asyncio.run(gerar_voz(roteiro))
+        
+        print("\n[Passo 3] Coletando imagens do front no Pexels...")
+        baixar_videos_pexels(query="electronic music festival", quantidade=3)
+        
+    except Exception as err:
+        print(f"\n[Erro Geral] {err}")
+        exit(1)
 
 if __name__ == "__main__":
     main()
