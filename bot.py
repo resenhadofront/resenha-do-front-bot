@@ -19,7 +19,7 @@ async def gerar_voz(texto, arquivo_saida="audio.mp3"):
     print(f"[Sucesso] Áudio gerado e salvo como: {arquivo_saida}")
 
 def gerar_roteiro(tema):
-    """Pede ao Llama 3 (via Groq) para criar o roteiro focado em retenção"""
+    """Pede ao Llama (via Groq) para criar o roteiro com sistema de redundância"""
     prompt_sistema = """
     Você é um roteirista profissional do TikTok especialista no nicho de música eletrônica.
     Seu objetivo é criar roteiros magnéticos, informativos e rápidos baseados no tema enviado.
@@ -32,16 +32,26 @@ def gerar_roteiro(tema):
     5. Termine com uma Chamada para Ação instigando um debate nos comentários.
     """
     
-    # Usando o Llama 3 8B, modelo gratuito, estável e incrivelmente veloz na Groq
-    completion = client.chat.completions.create(
-        model="llama3-8b-8192",
-        messages=[
-            {"role": "system", "content": prompt_sistema},
-            {"role": "user", "content": f"Crie um roteiro sobre o seguinte tema: {tema}"}
-        ],
-        temperature=0.7,
-    )
-    return completion.choices[0].message.content
+    # Lista de modelos atualizados da Groq caso algum seja desativado no futuro
+    modelos_groq = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"]
+    
+    for modelo in modelos_groq:
+        try:
+            print(f"[Tentativa] Solicitando roteiro usando o modelo: {modelo}...")
+            completion = client.chat.completions.create(
+                model=modelo,
+                messages=[
+                    {"role": "system", "content": prompt_sistema},
+                    {"role": "user", "content": f"Crie um roteiro sobre o seguinte tema: {tema}"}
+                ],
+                temperature=0.7,
+            )
+            print(f"[Sucesso] Roteiro gerado com o modelo {modelo}!")
+            return completion.choices[0].message.content
+        except Exception as e:
+            print(f"[Aviso] O modelo {modelo} falhou ou mudou. Tentando o próximo da lista...")
+            
+    raise Exception("Todos os modelos da Groq falharam. Verifique o console da Groq.")
 
 def baixar_videos_pexels(query="rave festival", quantidade=3):
     """Busca e baixa clipes na vertical (estilo TikTok) do Pexels totalmente de graça"""
@@ -84,7 +94,7 @@ def baixar_videos_pexels(query="rave festival", quantidade=3):
 def main():
     tema_do_video = "A história secreta por trás do surgimento da cultura Rave e do movimento Acid House"
     
-    print(f"[Passo 1] Acionando a Groq (Llama 3) para criar o roteiro...")
+    print(f"[Passo 1] Acionando a Groq para criar o roteiro...")
     try:
         roteiro = gerar_roteiro(tema_do_video)
         print("\n--- Roteiro Gerado ---")
