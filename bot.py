@@ -8,7 +8,6 @@ from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips
 groq_key = os.environ.get("GROQ_API_KEY")
 pexels_key = os.environ.get("PEXELS_API_KEY")
 
-# Inicializa o cliente da Groq
 client = Groq(api_key=groq_key)
 
 def limpar_roteiro_ia(texto_bruto):
@@ -32,8 +31,8 @@ def limpar_roteiro_ia(texto_bruto):
             
     return " ".join(linhas_limpas)
 
-def gerar_voz_e_legenda(texto, audio_path="audio.mp3", sub_path="legenda.vtt"):
-    """Gera o arquivo de áudio e extrai a legenda perfeitamente sincronizada"""
+def gerar_voz_e_legenda(texto, audio_path="audio.mp3", sub_path="legenda.srt"):
+    """Gera o arquivo de áudio e extrai a legenda SRT perfeitamente sincronizada"""
     print("[Iniciando] Solicitando narração e sincronismo de legenda ao Edge-TTS...")
     cmd = [
         "edge-tts",
@@ -44,7 +43,7 @@ def gerar_voz_e_legenda(texto, audio_path="audio.mp3", sub_path="legenda.vtt"):
     ]
     try:
         subprocess.run(cmd, check=True)
-        print(f"[Sucesso] Áudio e Legendas gerados com sucesso!")
+        print(f"[Sucesso] Áudio e Legendas SRT gerados!")
         return True
     except Exception as e:
         print(f"[Erro no Voice] Falha ao rodar o gerador de voz/legenda: {e}")
@@ -138,7 +137,7 @@ def baixar_videos_pexels_dinamico(queries):
     return arquivos_baixados
 
 def editar_video_base(videos, audio_path, output_path="video_cru.mp4"):
-    """Une as mídias dinâmicas com o áudio mas deixa sem legenda por enquanto"""
+    """Une as mídias dinâmicas com o áudio"""
     print("\n[Passo 4] Realizando a colagem de mídias com o MoviePy...")
     try:
         audio_clip = AudioFileClip(audio_path)
@@ -171,10 +170,10 @@ def editar_video_base(videos, audio_path, output_path="video_cru.mp4"):
         return False
 
 def aplicar_legendas_estilizadas(video_input, legenda_input, video_output="video_final.mp4"):
-    """Renderiza a legenda estilizada estilo TikTok (Amarela, com borda preta, no centro)"""
-    print("\n[Passo 5] Aplicando legendas dinâmicas estilo TikTok via FFmpeg de alta velocidade...")
+    """Renderiza a legenda estilizada estilo TikTok usando arquivo SRT de forma estável"""
+    print("\n[Passo 5] Aplicando legendas dinâmicas estilo TikTok via FFmpeg...")
     
-    # Configuração de estilo ASS: Fonte DejaVu Sans, amarela (&H0000FFFF), borda preta grossa, centralizada no meio da tela (Alignment=5)
+    # Estilo ASS/SRT estável: Fonte DejaVu Sans, amarela, borda preta grossa, centralizada
     estilo_tiktok = "Fontname=DejaVu Sans,FontSize=24,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2.5,Alignment=5"
     
     cmd = [
@@ -186,7 +185,7 @@ def aplicar_legendas_estilizadas(video_input, legenda_input, video_output="video
     ]
     try:
         subprocess.run(cmd, check=True)
-        print(f"[Sucesso] Legendas aplicadas! Vídeo mobile definitivo pronto: {video_output}")
+        print(f"[Sucesso] Vídeo mobile definitivo pronto: {video_output}")
         return True
     except Exception as e:
         print(f"[Erro nas Legendas] Falha ao embutir texto no vídeo: {e}")
@@ -202,24 +201,28 @@ def main():
         print(roteiro_limpo)
         print("--------------------------------\n")
         
-        # Passo 2 modificado: Gera o áudio e a legenda juntos
-        gerar_voz_e_legenda(roteiro_limpo, "audio.mp3", "legenda.vtt")
+        # Gera o áudio e a legenda SRT juntos
+        if not gerar_voz_e_legenda(roteiro_limpo, "audio.mp3", "legenda.srt"):
+            raise Exception("Erro ao gerar voz e legenda.")
         
         termos_visuais = gerar_termos_busca_visuais(roteiro_limpo)
         print(f"Conceitos visuais definidos pelo Bot: {termos_visuais}")
         
         videos_baixados = baixar_videos_pexels_dinamico(termos_visuais)
+        
         if len(videos_baixados) >= 2:
-            # Edita o vídeo limpo
-            editar_video_base(videos_baixados, "audio.mp3", "video_cru.mp4")
-            # Aplica a camada de texto por cima
-            aplicar_legendas_estilizadas("video_cru.mp4", "legenda.vtt", "video_final.mp4")
+            if not editar_video_base(videos_baixados, "audio.mp3", "video_cru.mp4"):
+                raise Exception("Erro na criação do vídeo base.")
+                
+            if not aplicar_legendas_estilizadas("video_cru.mp4", "legenda.srt", "video_final.mp4"):
+                raise Exception("Erro na aplicação das legendas.")
         else:
-            print("[Erro] Mídias insuficientes para gerar a colagem de vídeo.")
-        print("\n[Fim] Script executado.")
+            raise Exception("Mídias insuficientes baixadas do Pexels.")
+            
+        print("\n[Fim] Script executado com sucesso completo!")
     except Exception as err:
-        print(f"\n[Erro Geral] {err}")
-        exit(1)
+        print(f"\n[Erro Geral Contido] {err}")
+        exit(1) # Agora força o erro no GitHub se algo der errado de verdade!
 
 if __name__ == "__main__":
     main()
