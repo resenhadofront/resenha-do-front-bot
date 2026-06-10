@@ -21,7 +21,7 @@ def limpar_roteiro_ia(texto_bruto):
     for linha in linhas:
         linha_limpa = linha.strip()
         linha_min = linha_limpa.lower()
-        if any(tag in linha_min for tag in tags_proibidas) and (len(linha_limpa) < 30 or ":" in linha_limpa):
+        if any(tag in linha_min for tag in tags_proibidas) and (len(linha_limpa) < 30 or ":" in inline_limpa if 'inline_limpa' in locals() else ":" in linha_limpa):
             continue
         if linha_limpa.startswith("[") or linha_limpa.startswith("("):
             continue
@@ -104,7 +104,7 @@ def fracionar_legenda_srt(caminho_original, caminho_novo, palavras_por_scene=3):
         for pedaco in pedacos:
             texto_pedaco = " ".join(pedaco).upper()
             proporcao = len(pedaco) / total_palavras
-            duracao_pedaco = duracao_total * proportions if 'proportions' in locals() else duracao_total * proporcao
+            duracao_pedaco = duracao_total * proporcao
             
             tempo_fim_pedaco = tempo_acumulado + timedelta(seconds=duracao_pedaco)
             novos_blocos.append(f"{index_geral}\n{time_to_str(tempo_acumulado)} --> {time_to_str(tempo_fim_pedaco)}\n{texto_pedaco}")
@@ -145,7 +145,6 @@ def gerar_roteiro(tema):
     except Exception as e:
         raise Exception(f"Falha ao gerar roteiro na Groq: {e}")
 
-# --- AQUI ACONTECE A ATUALIZAÇÃO DA INTELIGÊNCIA GRATUITA ---
 def gerar_termos_busca_visuais(roteiro):
     """Pede à IA para traduzir o roteiro em termos realistas e localizáveis para o Pexels"""
     prompt_sistema = """
@@ -209,7 +208,6 @@ def baixar_videos_pexels_dinamico(queries):
                     with open(nome_provisorio, "wb") as f:
                         f.write(res.content)
                     
-                    # FFmpeg força proporção perfeita de celular e arranca áudio original do clipe
                     cmd_formatar = [
                         "ffmpeg", "-y", "-i", nome_provisorio,
                         "-vf", "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280",
@@ -277,7 +275,7 @@ def aplicar_legendas_estilizadas(video_input, legenda_input, video_output="video
         print(f"[Sucesso] Vídeo mobile 100% simétrico pronto: {video_output}")
         return True
     except Exception as e:
-        print(f"[Erro nas Legendas] Falha ao embutir texto: {e}")
+        print(f"[Erro nas Legendas] Failed ao embutir texto: {e}")
         return False
 
 def main():
@@ -296,7 +294,7 @@ def main():
         "Por que as pistas mais conceituadas do mundo proíbem celulares e câmeras no front",
         "A genialidade sombria por trás das produções do Kraftwerk, os avós da música eletrônica",
         "Como a ilha de Ibiza se transformou na capital mundial da curtição e dos super clubes",
-        "O mistério dos DJs mascarados: por que o anonimato atrai tanta atenção na cena eletrônica"
+        "O mistério do som dos DJs mascarados: por que o anonimato atrai tanta atenção na cena eletrônica"
     ]
     
     tema_do_video = random.choice(lista_temas)
@@ -315,7 +313,6 @@ def main():
             
         fracionar_legenda_srt("legenda_crua.srt", "legenda.srt", palavras_por_scene=3)
         
-        # Aqui o robô usa a inteligência de tradução gratuita
         termos_visuais = gerar_termos_busca_visuais(roteiro_limpo)
         print(f"Conceitos visuais traduzidos pelo Bot para o Pexels: {termos_visuais}")
         
