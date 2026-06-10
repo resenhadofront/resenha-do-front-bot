@@ -22,7 +22,7 @@ def limpar_roteiro_ia(texto_bruto):
         linha_limpa = linha.strip()
         linha_min = linha_limpa.lower()
         
-        if any(tag in linha_min for tag in tags_proibidas) and (len(linha_limpa) < 30 or ":" in linha_limpa):
+        if any(tag in linha_min for tag in tags_proibidas) and (len(linha_limpa) < 30 or ":" in inline_limpa if 'inline_limpa' in locals() else ":" in linha_limpa):
             continue
         if linha_limpa.startswith("[") or linha_limpa.startswith("("):
             continue
@@ -31,9 +31,9 @@ def limpar_roteiro_ia(texto_bruto):
             
     return " ".join(linhas_limpas)
 
-def gerar_voz_e_legenda(texto, audio_path="audio.mp3", sub_path="legenda.srt"):
-    """Gera o arquivo de áudio e extrai a legenda SRT perfeitamente sincronizada"""
-    print("[Iniciando] Solicitando narração e sincronismo de legenda ao Edge-TTS...")
+def gerar_voz_e_legenda(texto, audio_path="audio.mp3", sub_path="legenda_crua.srt"):
+    """Gera o arquivo de áudio e extrai a legenda SRT base da Microsoft"""
+    print("[Iniciando] Solicitando narração ao Edge-TTS...")
     cmd = [
         "edge-tts",
         "--voice", "pt-BR-AntonioNeural",
@@ -43,11 +43,80 @@ def gerar_voz_e_legenda(texto, audio_path="audio.mp3", sub_path="legenda.srt"):
     ]
     try:
         subprocess.run(cmd, check=True)
-        print(f"[Sucesso] Áudio e Legendas SRT gerados!")
+        print(f"[Sucesso] Áudio e Legendas base gerados!")
         return True
     except Exception as e:
-        print(f"[Erro no Voice] Falha ao rodar o gerador de voz/legenda: {e}")
+        print(f"[Erro no Voice] Falha ao rodar o gerador de voz: {e}")
         return False
+
+def fracionar_legenda_srt(caminho_original, caminho_novo, palavras_por_cena=3):
+    """Fatia as frases longas em blocos dinâmicos de 3 palavras (Estilo TikTok Viral)"""
+    import re
+    from datetime import timedelta
+
+    def str_to_time(time_str):
+        h, m, s = time_str.split(':')
+        s, ms = s.split(',')
+        return timedelta(hours=int(h), minutes=int(m), seconds=int(s), milliseconds=int(ms))
+
+    def time_to_str(td):
+        total_seconds = int(td.total_seconds())
+        h = total_seconds // 3600
+        m = (total_seconds % 3600) // 60
+        s = total_seconds % 60
+        ms = int(td.microseconds // 1000)
+        return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+    if not os.path.exists(caminho_original):
+        print("[Erro] Legenda base não encontrada.")
+        return
+
+    with open(caminho_original, 'r', encoding='utf-8') as f:
+        conteudo = f.read()
+
+    blocos = re.split(r'\n\s*\n', conteudo.strip())
+    novos_blocos = []
+    index_geral = 1
+
+    for bloco in blocos:
+        linhas = [l.strip() for l in bloco.split('\n') if l.strip()]
+        if len(linhas) < 3:
+            continue
+        
+        tempo_str = linhas[1]
+        texto = " ".join(linhas[2:])
+        
+        match = re.match(r'(\d+:\d+:\d+,\d+)\s*-->\s*(\d+:\d+:\d+,\d+)', tempo_str)
+        if not match:
+            continue
+            
+        inicio = str_to_time(match.group(1))
+        fim = str_to_time(match.group(2))
+        duracao_total = (fim - inicio).total_seconds()
+        
+        palavras = texto.split()
+        if not palavras:
+            continue
+            
+        # Divide as frases longas em grupos de no máximo 3 palavras
+        pedacos = [palavras[i:i + palavras_por_cena] for i in range(0, len(palavras), palavras_por_cena)]
+        total_palavras = len(palavras)
+        
+        tempo_acumulado = inicio
+        for pedaco in pedacos:
+            texto_pedaco = " ".join(pedaco).upper() # Força CAIXA ALTA estilo Reels/TikTok
+            proporcao = len(pedaco) / total_palavras
+            duracao_pedaco = duracao_total * proporcao
+            
+            tempo_fim_pedaco = tempo_acumulado + timedelta(seconds=duracao_pedaco)
+            
+            novos_blocos.append(f"{index_geral}\n{time_to_str(tempo_acumulado)} --> {time_to_str(tempo_fim_pedaco)}\n{texto_pedaco}")
+            index_geral += 1
+            tempo_acumulado = tempo_fim_pedaco
+
+    with open(caminho_novo, 'w', encoding='utf-8') as f:
+        f.write("\n\n".join(novos_blocos))
+    print("[Sucesso] Legendas fracionadas e convertidas para formato dinâmico!")
 
 def gerar_roteiro(tema):
     """Gera um roteiro magnético focado em retenção usando o Llama 3"""
@@ -170,11 +239,11 @@ def editar_video_base(videos, audio_path, output_path="video_cru.mp4"):
         return False
 
 def aplicar_legendas_estilizadas(video_input, legenda_input, video_output="video_final.mp4"):
-    """Renderiza a legenda estilizada estilo TikTok usando arquivo SRT de forma estável"""
+    """Renderiza a legenda estilizada na parte inferior (Aligment=2) com margem segura de layout"""
     print("\n[Passo 5] Aplicando legendas dinâmicas estilo TikTok via FFmpeg...")
     
-    # Estilo ASS/SRT estável: Fonte DejaVu Sans, amarela, borda preta grossa, centralizada
-    estilo_tiktok = "Fontname=DejaVu Sans,FontSize=24,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2.5,Alignment=5"
+    # Customização: Fonte DejaVu Sans, amarela, borda preta espessa (Outline=3), centralizado embaixo (Alignment=2) com margem de segurança (MarginV=120) para não colidir com o layout do TikTok
+    estilo_tiktok = "Fontname=DejaVu Sans,FontSize=26,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Alignment=2,MarginV=120"
     
     cmd = [
         "ffmpeg", "-y",
@@ -185,7 +254,7 @@ def aplicar_legendas_estilizadas(video_input, legenda_input, video_output="video
     ]
     try:
         subprocess.run(cmd, check=True)
-        print(f"[Sucesso] Vídeo mobile definitivo pronto: {video_output}")
+        print(f"[Sucesso] Vídeo mobile definitivo pronto com legendas dinâmicas: {video_output}")
         return True
     except Exception as e:
         print(f"[Erro nas Legendas] Falha ao embutir texto no vídeo: {e}")
@@ -201,9 +270,12 @@ def main():
         print(roteiro_limpo)
         print("--------------------------------\n")
         
-        # Gera o áudio e a legenda SRT juntos
-        if not gerar_voz_e_legenda(roteiro_limpo, "audio.mp3", "legenda.srt"):
+        # Gera o áudio e a legenda base
+        if not gerar_voz_e_legenda(roteiro_limpo, "audio.mp3", "legenda_crua.srt"):
             raise Exception("Erro ao gerar voz e legenda.")
+            
+        # Executa o fatiador de legendas dinâmicas de 3 palavras
+        fracionar_legenda_srt("legenda_crua.srt", "legenda.srt", palavras_por_cena=3)
         
         termos_visuais = gerar_termos_busca_visuais(roteiro_limpo)
         print(f"Conceitos visuais definidos pelo Bot: {termos_visuais}")
@@ -222,7 +294,7 @@ def main():
         print("\n[Fim] Script executado com sucesso completo!")
     except Exception as err:
         print(f"\n[Erro Geral Contido] {err}")
-        exit(1) # Agora força o erro no GitHub se algo der errado de verdade!
+        exit(1)
 
 if __name__ == "__main__":
     main()
